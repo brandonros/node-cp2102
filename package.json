@@ -1,0 +1,26 @@
+{
+  "name": "cp2102",
+  "version": "0.0.1",
+  "description": "Robotell USB-CAN Adapter driver",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brandonros/node-cp2102.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/brandonros/node-cp2102/issues"
+  },
+  "homepage": "https://github.com/brandonros/node-cp2102#readme",
+  "dependencies": {
+    "debug": "^4.1.1",
+    "usb": "^1.6.3"
+  },
+  "devDependencies": {
+    "proxyquire": "^2.1.3"
+  }
+}
