@@ -115,8 +115,8 @@ const processBuffer = (buffer, cb) => {
 class Cp2012 extends EventEmitter {
   constructor(serialRate, bitRate) {
     super()
-    this.serialRate = serialRate
-    this.bitRate = bitRate
+    this.serialRate = serialRate || 115200
+    this.bitRate = bitRate || 1000000
   }
 
   getUsbDevice() {
