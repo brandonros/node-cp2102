@@ -1,6 +1,7 @@
 const usb = require('usb')
 const util = require('util')
 const EventEmitter = require('events')
+const debug = require('debug')('cp2102')
 
 const USB_DIR_OUT = 0
 const USB_TYPE_VENDOR = (0x02 << 5)
@@ -9,7 +10,9 @@ const USB_RECIP_DEVICE = 0x00
 const CP210X_IFC_ENABLE = 0x00
 const CP210X_SET_MHS = 0x07
 const CP210X_SET_BAUDDIV = 0x01
+
 const BAUD_RATE_GEN_FREQ = 0x384000
+
 const CONTROL_WRITE_RTS = 0x0200
 const CONTROL_WRITE_DTR = 0x0100
 const CONTROL_DTR = 0x01
@@ -134,34 +137,31 @@ class Cp2012 extends EventEmitter {
   }
 
   ifcEnable() {
-    return this.device.controlTransfer.call(
-      this.device,
+    return this.device.controlTransfer(
       USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
       CP210X_IFC_ENABLE,
-      0x00,
       0x01,
+      0x00,
       Buffer.from([])
     )
   }
 
   setMhs() {
-    return this.device.controlTransfer.call(
-      this.device,
+    return this.device.controlTransfer(
       USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
       CP210X_SET_MHS,
-      0x00,
       CONTROL_DTR | CONTROL_RTS | CONTROL_WRITE_DTR | CONTROL_WRITE_RTS,
+      0x00,
       Buffer.from([])
     )
   }
 
   setBaudDiv() {
-    return this.device.controlTransfer.call(
-      this.device,
+    return this.device.controlTransfer(
       USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
       CP210X_SET_BAUDDIV,
-      0x00,
       BAUD_RATE_GEN_FREQ / this.serialRate,
+      0x00,
       Buffer.from([])
     )
   }
@@ -174,7 +174,7 @@ class Cp2012 extends EventEmitter {
     const msgFormat = 0x01
     const msgType = 0x01
     const frame = buildFrame(payload, dataLen, msgChan, msgFormat, msgType)
-    return this.outEndpoint.transfer.call(this.outEndpoint, frame)
+    return this.outEndpoint.transfer(frame)
   }
 
   setSerialRate() {
@@ -186,7 +186,7 @@ class Cp2012 extends EventEmitter {
     const msgFormat = 0x01
     const msgType = 0x01
     const frame = buildFrame(payload, dataLen, msgChan, msgFormat, msgType)
-    return this.outEndpoint.transfer.call(this.outEndpoint, frame)
+    return this.outEndpoint.transfer(frame)
   }
 
   setBitRate() {
@@ -198,10 +198,11 @@ class Cp2012 extends EventEmitter {
     const msgFormat = 0x01
     const msgType = 0x01
     const frame = buildFrame(payload, dataLen, msgChan, msgFormat, msgType)
-    return this.outEndpoint.transfer.call(this.outEndpoint, frame)
+    return this.outEndpoint.transfer(frame)
   }
 
   sendCanFrame(arbitrationId, data) {
+    debug(`sendCanFrame arbitrationId=${arbitrationId.toString(16)} data=${data.toString('hex')}`)
     const payload = Buffer.alloc(12)
     payload.writeUInt32LE(arbitrationId, 0)
     payload.writeUInt8(data[0], 4)
@@ -217,13 +218,13 @@ class Cp2012 extends EventEmitter {
     const msgFormat = 0x00
     const msgType = 0x00
     const frame = buildFrame(payload, dataLen, msgChan, msgFormat, msgType)
-    return this.outEndpoint.transfer.call(this.outEndpoint, frame)
+    return this.outEndpoint.transfer(frame)
   }
 
   async recv() {
     let buffer = Buffer.from([])
     for (;;) {
-      const frame = await this.inEndpoint.transfer.call(this.inEndpoint, 64)
+      const frame = await this.inEndpoint.transfer(64)
       buffer = Buffer.concat([buffer, frame])
       const bytesProcessed = processBuffer(buffer, (frame) => {
         const checksum = frame[frame.length - 1]
@@ -234,10 +235,11 @@ class Cp2012 extends EventEmitter {
         if (dataLen === 0x08 && msgChan === 0x00 && msgFormat === 0x00 && msgType === 0x00) {
           const unescapedFrame = Buffer.from(unescapeInput(frame))
           const arbitrationId = unescapedFrame.readUInt32LE(0)
-          const payload = unescapedFrame.slice(4, 4 + dataLen)
+          const data = unescapedFrame.slice(4, 4 + dataLen)
+          debug(`recv: arbitrationId=${arbitrationId.toString(16)} data=${data.toString('hex')}`)
           this.emit('frame', {
             arbitrationId,
-            payload
+            data
           })
         }
       })
