@@ -237,10 +237,10 @@ class Cp2012 extends EventEmitter {
           const arbitrationId = unescapedFrame.readUInt32LE(0)
           const data = unescapedFrame.slice(4, 4 + dataLen)
           debug(`recv: arbitrationId=${arbitrationId.toString(16)} data=${data.toString('hex')}`)
-          this.emit('frame', Buffer.concat([
-            Buffer.from(arbitrationId),
-            data
-          ]))
+          const output = Buffer.alloc(12)
+          output.writeUInt32LE(arbitrationId, 0)
+          data.copy(output, 4)
+          this.emit('frame', output)
         }
       })
       buffer = buffer.slice(bytesProcessed)
