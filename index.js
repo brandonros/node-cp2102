@@ -134,7 +134,8 @@ class Cp2012 extends EventEmitter {
   }
 
   ifcEnable() {
-    return util.promisify(this.device.controlTransfer)(
+    return this.device.controlTransfer.call(
+      this.device,
       USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
       CP210X_IFC_ENABLE,
       0x00,
@@ -144,7 +145,8 @@ class Cp2012 extends EventEmitter {
   }
 
   setMhs() {
-    return util.promisify(this.device.controlTransfer)(
+    return this.device.controlTransfer.call(
+      this.device,
       USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
       CP210X_SET_MHS,
       0x00,
@@ -154,7 +156,8 @@ class Cp2012 extends EventEmitter {
   }
 
   setBaudDiv() {
-    return util.promisify(this.device.controlTransfer)(
+    return this.device.controlTransfer.call(
+      this.device,
       USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
       CP210X_SET_BAUDDIV,
       0x00,
@@ -171,7 +174,7 @@ class Cp2012 extends EventEmitter {
     const msgFormat = 0x01
     const msgType = 0x01
     const frame = buildFrame(payload, dataLen, msgChan, msgFormat, msgType)
-    return util.promisify(this.outEndpoint.transfer)(frame)
+    return this.outEndpoint.transfer.call(this.outEndpoint, frame)
   }
 
   setSerialRate() {
@@ -183,7 +186,7 @@ class Cp2012 extends EventEmitter {
     const msgFormat = 0x01
     const msgType = 0x01
     const frame = buildFrame(payload, dataLen, msgChan, msgFormat, msgType)
-    return util.promisify(this.outEndpoint.transfer)(frame)
+    return this.outEndpoint.transfer.call(this.outEndpoint, frame)
   }
 
   setBitRate() {
@@ -195,7 +198,7 @@ class Cp2012 extends EventEmitter {
     const msgFormat = 0x01
     const msgType = 0x01
     const frame = buildFrame(payload, dataLen, msgChan, msgFormat, msgType)
-    return util.promisify(this.outEndpoint.transfer)(frame)
+    return this.outEndpoint.transfer.call(this.outEndpoint, frame)
   }
 
   sendCanFrame(arbitrationId, data) {
@@ -214,13 +217,13 @@ class Cp2012 extends EventEmitter {
     const msgFormat = 0x00
     const msgType = 0x00
     const frame = buildFrame(payload, dataLen, msgChan, msgFormat, msgType)
-    return util.promisify(this.outEndpoint.transfer)(frame)
+    return this.outEndpoint.transfer.call(this.outEndpoint, frame)
   }
 
   async recv() {
     let buffer = Buffer.from([])
     for (;;) {
-      const frame = await util.promisify(this.inEndpoint.transfer)(64)
+      const frame = await this.inEndpoint.transfer.call(this.inEndpoint, 64)
       buffer = Buffer.concat([buffer, frame])
       const bytesProcessed = processBuffer(buffer, (frame) => {
         const checksum = frame[frame.length - 1]
@@ -246,6 +249,9 @@ class Cp2012 extends EventEmitter {
     this.device = this.getUsbDevice()
     this.inEndpoint = this.device.interfaces[0].endpoints.find(endpoint => endpoint.constructor.name === 'InEndpoint')
     this.outEndpoint = this.device.interfaces[0].endpoints.find(endpoint => endpoint.constructor.name === 'OutEndpoint')
+    this.device.controlTransfer = util.promisify(this.device.controlTransfer)
+    this.inEndpoint.transfer = util.promisify(this.inEndpoint.transfer)
+    this.outEndpoint.transfer = util.promisify(this.outEndpoint.transfer)
     await this.ifcEnable()
     await this.setMhs()
     await this.setBaudDiv()
