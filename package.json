@@ -17,8 +17,11 @@
   },
   "homepage": "https://github.com/brandonros/node-cp2102#readme",
   "dependencies": {
+    "buffer": "^5.6.0",
     "debug": "^4.1.1",
-    "usb": "^1.6.3"
+    "events": "^3.1.0",
+    "usb": "^1.6.3",
+    "webusb": "^2.0.2"
   },
   "devDependencies": {
     "proxyquire": "^2.1.3"

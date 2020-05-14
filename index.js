@@ -1,7 +1,6 @@
-const usb = require('usb')
-const util = require('util')
-const EventEmitter = require('events')
-const debug = require('debug')('cp2102')
+const Buffer = require('./node_modules/buffer/index').Buffer
+const EventEmitter = require('./node_modules/events/events')
+const usb = navigator.usb
 
 const USB_DIR_OUT = 0
 const USB_TYPE_VENDOR = (0x02 << 5)
@@ -122,48 +121,53 @@ class Cp2012 extends EventEmitter {
     this.bitRate = bitRate || 1000000
   }
 
-  getUsbDevice() {
-    const deviceList = usb.getDeviceList()
-    const device = deviceList.find(device => {
-      return device.deviceDescriptor.idProduct === PRODUCT_ID &&
-        device.deviceDescriptor.idVendor === VENDOR_ID
+  async getUsbDevice() {
+    const device = await usb.requestDevice({
+      filters: [
+        {
+          vendorId: VENDOR_ID,
+          productId: PRODUCT_ID
+        }
+      ]
     })
-    if (!device) {
-      throw new Error('Device not found')
+    await device.open()
+    const [ configuration ] = device.configurations
+    if (device.configuration === null) {
+      await device.selectConfiguration(configuration.configurationValue)
     }
-    device.open()
-    device.interfaces[0].claim()
+    await device.claimInterface(configuration.interfaces[0].interfaceNumber)
+    await device.selectAlternateInterface(configuration.interfaces[0].interfaceNumber, 0)
     return device
   }
 
   ifcEnable() {
-    return this.device.controlTransfer(
-      USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
-      CP210X_IFC_ENABLE,
-      0x01,
-      0x00,
-      Buffer.from([])
-    )
+    return this.device.controlTransferOut({
+      requestType: 'vendor',
+      recipient: 'device',
+      request: CP210X_IFC_ENABLE,
+      value: 0x01,
+      index: 0x00
+    }, Buffer.from([]))
   }
 
   setMhs() {
-    return this.device.controlTransfer(
-      USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
-      CP210X_SET_MHS,
-      CONTROL_DTR | CONTROL_RTS | CONTROL_WRITE_DTR | CONTROL_WRITE_RTS,
-      0x00,
-      Buffer.from([])
-    )
+    return this.device.controlTransferOut({
+      requestType: 'vendor',
+      recipient: 'device',
+      request: CP210X_SET_MHS,
+      value: CONTROL_DTR | CONTROL_RTS | CONTROL_WRITE_DTR | CONTROL_WRITE_RTS,
+      index: 0x00,
+    }, Buffer.from([]))
   }
 
   setBaudDiv() {
-    return this.device.controlTransfer(
-      USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
-      CP210X_SET_BAUDDIV,
-      BAUD_RATE_GEN_FREQ / this.serialRate,
-      0x00,
-      Buffer.from([])
-    )
+    return this.device.controlTransferOut({
+      requestType: 'vendor',
+      recipient: 'device',
+      request: CP210X_SET_BAUDDIV,
+      value: BAUD_RATE_GEN_FREQ / this.serialRate,
+      index: 0x00,
+    }, Buffer.from([]))
   }
 
   reset() {
@@ -174,7 +178,7 @@ class Cp2012 extends EventEmitter {
     const msgFormat = 0x01
     const msgType = 0x01
     const frame = buildFrame(payload, dataLen, msgChan, msgFormat, msgType)
-    return this.outEndpoint.transfer(frame)
+    return this.device.transferOut(this.outEndpoint.endpointNumber, frame)
   }
 
   setSerialRate() {
@@ -186,7 +190,7 @@ class Cp2012 extends EventEmitter {
     const msgFormat = 0x01
     const msgType = 0x01
     const frame = buildFrame(payload, dataLen, msgChan, msgFormat, msgType)
-    return this.outEndpoint.transfer(frame)
+    return this.device.transferOut(this.outEndpoint.endpointNumber, frame)
   }
 
   setBitRate() {
@@ -198,11 +202,11 @@ class Cp2012 extends EventEmitter {
     const msgFormat = 0x01
     const msgType = 0x01
     const frame = buildFrame(payload, dataLen, msgChan, msgFormat, msgType)
-    return this.outEndpoint.transfer(frame)
+    return this.device.transferOut(this.outEndpoint.endpointNumber, frame)
   }
 
   sendCanFrame(arbitrationId, data) {
-    debug(`sendCanFrame arbitrationId=${arbitrationId.toString(16)} data=${data.toString('hex')}`)
+    console.debug(`sendCanFrame arbitrationId=${arbitrationId.toString(16)} data=${data.toString('hex')}`)
     const payload = Buffer.alloc(12)
     payload.writeUInt32LE(arbitrationId, 0)
     payload.writeUInt8(data[0], 4)
@@ -218,13 +222,15 @@ class Cp2012 extends EventEmitter {
     const msgFormat = 0x00
     const msgType = 0x00
     const frame = buildFrame(payload, dataLen, msgChan, msgFormat, msgType)
-    return this.outEndpoint.transfer(frame)
+    return this.device.transferOut(this.outEndpoint.endpointNumber, frame)
   }
 
   async recv() {
     let buffer = Buffer.from([])
     for (;;) {
-      const frame = await this.inEndpoint.transfer(64)
+      const transferInResult = await this.device.transferIn(this.inEndpoint.endpointNumber, 64)
+      const frame = Buffer.from(transferInResult.data.buffer)
+      console.log(frame)
       buffer = Buffer.concat([buffer, frame])
       const bytesProcessed = processBuffer(buffer, (frame) => {
         const checksum = frame[frame.length - 1]
@@ -236,7 +242,7 @@ class Cp2012 extends EventEmitter {
           const unescapedFrame = Buffer.from(unescapeInput(frame))
           const arbitrationId = unescapedFrame.readUInt32LE(0)
           const data = unescapedFrame.slice(4, 4 + dataLen)
-          debug(`recv: arbitrationId=${arbitrationId.toString(16)} data=${data.toString('hex')}`)
+          console.debug(`recv: arbitrationId=${arbitrationId.toString(16)} data=${data.toString('hex')}`)
           const output = Buffer.alloc(12)
           output.writeUInt32LE(arbitrationId, 0)
           data.copy(output, 4)
@@ -248,12 +254,9 @@ class Cp2012 extends EventEmitter {
   }
 
   async init() {
-    this.device = this.getUsbDevice()
-    this.inEndpoint = this.device.interfaces[0].endpoints.find(endpoint => endpoint.constructor.name === 'InEndpoint')
-    this.outEndpoint = this.device.interfaces[0].endpoints.find(endpoint => endpoint.constructor.name === 'OutEndpoint')
-    this.device.controlTransfer = util.promisify(this.device.controlTransfer)
-    this.inEndpoint.transfer = util.promisify(this.inEndpoint.transfer)
-    this.outEndpoint.transfer = util.promisify(this.outEndpoint.transfer)
+    this.device = await this.getUsbDevice()
+    this.inEndpoint = this.device.configuration.interfaces[0].alternates[0].endpoints.find(e => e.direction === 'in')
+    this.outEndpoint = this.device.configuration.interfaces[0].alternates[0].endpoints.find(e => e.direction === 'out')
     await this.ifcEnable()
     await this.setMhs()
     await this.setBaudDiv()
